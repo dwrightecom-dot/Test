@@ -1,0 +1,32 @@
+# Force TLS 1.2
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# API endpoint and key
+$consoleUrl = "https://<console-ip-or-host>:3780/api/3/assets"
+$apiKey = "<your_api_key>"
+
+$headers = @{
+    "X-Api-Key" = $apiKey
+    "Accept"    = "application/json"
+}
+
+try {
+    $response = Invoke-RestMethod -Uri $consoleUrl -Headers $headers -Method Get
+    Write-Host "Request succeeded. Assets fetched: $($response.resources.Count)"
+} catch [System.Net.WebException] {
+    $webResponse = $_.Exception.Response
+    if ($webResponse -ne $null) {
+        $statusCode = $webResponse.StatusCode.value__
+        $statusDescription = $webResponse.StatusDescription
+        $reader = New-Object System.IO.StreamReader($webResponse.GetResponseStream())
+        $body = $reader.ReadToEnd()
+        
+        Write-Host "HTTP Error $statusCode - $statusDescription"
+        Write-Host "Response body:"
+        Write-Host $body
+    } else {
+        Write-Host "Request failed: $($_.Exception.Message)"
+    }
+} catch {
+    Write-Host "Unexpected error: $($_.Exception.Message)"
+}
