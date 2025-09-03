@@ -1,0 +1,67 @@
+# --- CONFIGURE THESE VALUES ---
+$ApiToken = "YOUR_API_KEY_HERE"
+$ConsoleUrl = "https://<your-console-hostname>:3780"
+$PageSize = 200   # Number of assets per page (you can adjust this if needed)
+# ------------------------------
+
+# Headers for API key authentication
+$Headers = @{
+    "X-Api-Key"    = $ApiToken
+    "Content-Type" = "application/json"
+}
+
+# Ignore self-signed SSL certs (if your console uses self-signed certificates)
+Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(
+        ServicePoint srvPoint,
+        X509Certificate certificate,
+        WebRequest request,
+        int certificateProblem) {
+        return true;
+    }
+}
+"@
+[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Initialize variables
+$Page = 0
+$AllAssets = @()
+
+Write-Host "Fetching assets in pages of $PageSize..." -ForegroundColor Yellow
+
+while ($true) {
+    $Url = "$ConsoleUrl/api/3/assets?page=$Page&size=$PageSize"
+    try {
+        $Response = Invoke-RestMethod -Method Get -Uri $Url -Headers $Headers
+    }
+    catch {
+        Write-Host "Error fetching page $Page: $($_.Exception.Message)" -ForegroundColor Red
+        break
+    }
+
+    if (-not $Response.resources -or $Response.resources.Count -eq 0) {
+        Write-Host "No more assets found. Stopping." -ForegroundColor Green
+        break
+    }
+
+    # Add current page's assets to master list
+    $AllAssets += $Response.resources
+    Write-Host "Fetched page $Page: $($Response.resources.Count) assets." -ForegroundColor Cyan
+
+    # Stop if we've reached the last page
+    if ($Page -ge $Response.page.totalPages - 1) {
+        break
+    }
+
+    # Increment page number
+    $Page++
+}
+
+Write-Host "Total assets fetched: $($AllAssets.Count)" -ForegroundColor Green
+
+# Optional: output assets or export to JSON/CSV
+$AllAssets | ConvertTo-Json -Depth 5 | Out-File "assets.json"
