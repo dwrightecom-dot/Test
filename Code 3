@@ -1,0 +1,49 @@
+# --- FORCE TLS 1.2 ---
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# --- API CONFIG ---
+$consoleUrl = "https://<console-ip-or-host>:3780/api/3/assets"
+$apiKey = "<your_api_key>"
+$limit = 100
+$offset = 0
+$allAssets = @()
+
+# --- CREATE HttpClient WITH SSL BYPASS ---
+$handler = New-Object System.Net.Http.HttpClientHandler
+$handler.ServerCertificateCustomValidationCallback = { $true }  # skip SSL for testing
+
+$client = [System.Net.Http.HttpClient]::new($handler)
+$client.DefaultRequestHeaders.Add("X-Api-Key", $apiKey)
+$client.DefaultRequestHeaders.Add("Accept", "application/json")
+$client.DefaultRequestHeaders.Add("Connection", "close")
+
+# --- FETCH ASSETS WITH PAGINATION ---
+do {
+    $url = "$consoleUrl?limit=$limit&offset=$offset"
+
+    try {
+        $responseMessage = $client.GetAsync($url).Result
+        $content = $responseMessage.Content.ReadAsStringAsync().Result
+
+        if (-not $responseMessage.IsSuccessStatusCode) {
+            Write-Host "HTTP Error $($responseMessage.StatusCode): $($responseMessage.ReasonPhrase)"
+            Write-Host "Response body: $content"
+            break
+        }
+
+        $responseJson = $content | ConvertFrom-Json
+        if ($responseJson.resources.Count -eq 0) { break }
+
+        $allAssets += $responseJson.resources
+        $offset += $responseJson.resources.Count
+
+    } catch {
+        Write-Host "Request failed: $($_.Exception.Message)"
+        break
+    }
+
+} while ($responseJson.resources.Count -eq $limit)
+
+# --- OUTPUT RESULTS ---
+Write-Host "`nTotal assets fetched: $($allAssets.Count)"
+$allAssets | ForEach-Object { Write-Host "ID: $($_.id) - Hostname: $($_.hostname)" }
